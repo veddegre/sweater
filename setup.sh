@@ -125,7 +125,6 @@ place_app() {
     return
   fi
   log "Cloning $REPO"
-  echo "The GitHub repo is private. If clone asks you to sign in, use a personal access token as the password."
   git clone "$REPO" "$APP_DIR"
 }
 
