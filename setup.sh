@@ -174,12 +174,19 @@ set_permissions() {
 }
 
 install_service() {
-  local unit_dir="$HOME/.config/systemd/user"
-  local node_bin npm_bin
+  local node_bin npm_bin unit
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "sudo is required so the app can start at boot." >&2
+    exit 1
+  fi
   node_bin="$(command -v node)"
   npm_bin="$(command -v npm)"
-  mkdir -p "$unit_dir"
-  cat > "$unit_dir/$SERVICE_NAME" << EOF
+  unit="/etc/systemd/system/${SERVICE_NAME}"
+  # A user service only runs after login. Replace it with one that starts at boot.
+  systemctl --user disable --now "$SERVICE_NAME" >/dev/null 2>&1 || true
+  rm -f "$HOME/.config/systemd/user/$SERVICE_NAME"
+  systemctl --user daemon-reload >/dev/null 2>&1 || true
+  sudo tee "$unit" >/dev/null << EOF
 [Unit]
 Description=IT apparel competition
 After=network-online.target
@@ -187,26 +194,22 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=${USER}
+Group=$(id -gn)
 WorkingDirectory=${APP_DIR}
 Environment=NODE_ENV=production
 Environment=PATH=${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=${npm_bin} start -- --hostname 127.0.0.1 --port 3000
-Restart=on-failure
+Restart=always
 RestartSec=5
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 EOF
-  chmod 644 "$unit_dir/$SERVICE_NAME"
-  if command -v sudo >/dev/null 2>&1; then
-    sudo loginctl enable-linger "$USER" || true
-  fi
-  if ! systemctl --user daemon-reload; then
-    echo "Could not start a user service. From $APP_DIR run: npm start -- --hostname 127.0.0.1 --port 3000" >&2
-    return
-  fi
-  systemctl --user enable --now "$SERVICE_NAME"
-  log "The app is running on http://127.0.0.1:3000"
+  sudo chmod 644 "$unit"
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now "$SERVICE_NAME"
+  log "The app is running on http://127.0.0.1:3000 and will start at boot"
   echo "Point the Cloudflare tunnel at http://127.0.0.1:3000"
   echo "Node binary: $node_bin"
 }
